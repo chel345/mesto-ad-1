@@ -6,10 +6,9 @@
   Из index.js не допускается что то экспортировать
 */
 
-import { initialCards } from "./cards.js";
 import { createCardElement, deleteCard, likeCard } from "./components/card.js";
 import { openModalWindow, closeModalWindow, setCloseModalWindowEventListeners } from "./components/modal.js";
-
+import { getUserInfo, getCardList , setUserInfo, setUserAvatar, addCard } from "./components/api.js";
 import { enableValidation, clearValidation } from "./components/validation.js";
 
 // Настройки валидации
@@ -61,45 +60,101 @@ const handlePreviewPicture = ({ name, link }) => {
 
 const handleProfileFormSubmit = (evt) => {
   evt.preventDefault();
-  profileTitle.textContent = profileTitleInput.value;
-  profileDescription.textContent = profileDescriptionInput.value;
-  closeModalWindow(profileFormModalWindow);
+
+  const submitButton = evt.submitter;
+  const originalButtonText = submitButton.textContent;
+  submitButton.textContent = "Сохранение...";
+  submitButton.disabled = true;
+
+  setUserInfo({
+    name: profileTitleInput.value,
+    about: profileDescriptionInput.value,
+  })
+    .then((userData) => {
+      // Код отвечающий за обновление данных на странице
+      profileTitle.textContent = userData.name;
+      profileDescription.textContent = userData.about;
+      closeModalWindow(profileFormModalWindow);
+    })
+    .catch((err) => {
+      console.log(err);
+    })
+    .finally(() => {
+      submitButton.textContent = originalButtonText;
+      submitButton.disabled = false;
+    });
 };
 
-const handleAvatarFromSubmit = (evt) => {
+const handleAvatarFormSubmit = (evt) => {
   evt.preventDefault();
-  profileAvatar.style.backgroundImage = `url(${avatarInput.value})`;
-  closeModalWindow(avatarFormModalWindow);
+
+  const submitButton = evt.submitter;
+  const originalButtonText = submitButton.textContent;
+  submitButton.textContent = "Сохранение...";
+  submitButton.disabled = true;
+
+  setUserAvatar({
+    avatar: avatarInput.value,
+  })
+    .then((userData) => {
+      // Код отвечающий за обновление данных на странице
+      profileAvatar.style.backgroundImage = `url(${userData.avatar})`;
+      closeModalWindow(avatarFormModalWindow);
+    })
+    .catch((err) => {
+      console.log(err);
+    })
+    .finally(() => {
+      submitButton.textContent = originalButtonText;
+      submitButton.disabled = false;
+    });
 };
 
 const handleCardFormSubmit = (evt) => {
   evt.preventDefault();
-  placesWrap.prepend(
-    createCardElement(
-      {
-        name: cardNameInput.value,
-        link: cardLinkInput.value,
-      },
-      {
-        onPreviewPicture: handlePreviewPicture,
-        onLikeIcon: likeCard,
-        onDeleteCard: deleteCard,
-      }
-    )
-  );
+  
+  const submitButton = evt.submitter;
+  const originalButtonText = submitButton.textContent;
+  submitButton.textContent = "Сохранение...";
+  submitButton.disabled = true;
 
-  closeModalWindow(cardFormModalWindow);
+  addCard({
+    name: cardNameInput.value,
+    link: cardLinkInput.value,
+  })
+    .then((newCard) => {
+      // Получаем текущего пользователя для передачи ID
+      return getUserInfo().then((userData) => {
+        placesWrap.prepend(
+          createCardElement(newCard, {
+            onPreviewPicture: handlePreviewPicture,
+            onLikeIcon: likeCard,
+            onDeleteCard: deleteCard,
+            currentUserId: userData._id,
+          })
+        );
+        closeModalWindow(cardFormModalWindow);
+        cardForm.reset();
+      });
+    })
+    .catch((err) => {
+      console.log(err);
+    })
+    .finally(() => {
+      submitButton.textContent = originalButtonText;
+      submitButton.disabled = false;
+    });
 };
 
 // EventListeners
 profileForm.addEventListener("submit", handleProfileFormSubmit);
 cardForm.addEventListener("submit", handleCardFormSubmit);
-avatarForm.addEventListener("submit", handleAvatarFromSubmit);
+avatarForm.addEventListener("submit", handleAvatarFormSubmit);
 
 openProfileFormButton.addEventListener("click", () => {
   profileTitleInput.value = profileTitle.textContent;
   profileDescriptionInput.value = profileDescription.textContent;
-  clearValidation(avatarForm, validationSettings);
+  clearValidation(profileForm, validationSettings);
   openModalWindow(profileFormModalWindow);
 });
 
@@ -111,19 +166,8 @@ profileAvatar.addEventListener("click", () => {
 
 openCardFormButton.addEventListener("click", () => {
   cardForm.reset();
-  clearValidation(avatarForm, validationSettings);
+  clearValidation(cardForm, validationSettings);
   openModalWindow(cardFormModalWindow);
-});
-
-// отображение карточек
-initialCards.forEach((data) => {
-  placesWrap.append(
-    createCardElement(data, {
-      onPreviewPicture: handlePreviewPicture,
-      onLikeIcon: likeCard,
-      onDeleteCard: deleteCard,
-    })
-  );
 });
 
 //настраиваем обработчики закрытия попапов
@@ -131,3 +175,35 @@ const allPopups = document.querySelectorAll(".popup");
 allPopups.forEach((popup) => {
   setCloseModalWindowEventListeners(popup);
 });
+
+const shouldShowTrashFor = (card, userId) => {
+  if (card.owner._id !== userId) {
+    return null;
+  }
+  return deleteCard;
+}
+
+const update = () => {
+  Promise.all([getCardList(), getUserInfo()])
+    .then(([cards, userData]) => {
+      profileTitle.textContent = userData.name;
+      profileDescription.textContent = userData.about;
+      profileAvatar.style.backgroundImage = `url(${userData.avatar})`;
+      
+      cards.forEach((data) => {
+        placesWrap.append(
+          createCardElement(data, {
+            onPreviewPicture: handlePreviewPicture,
+            onLikeIcon: likeCard,
+            onDeleteCard: shouldShowTrashFor(data, userData._id),
+            currentUserId: userData._id,
+          })
+        );
+      });
+    })
+    .catch((err) => {
+      console.log(err);
+    });
+};
+
+update();
